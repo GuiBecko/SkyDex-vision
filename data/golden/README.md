@@ -43,12 +43,14 @@ That includes frauds that are sky-adjacent — a weather forecast page dense wit
 blue-sky graphics and sun icons (`fraud_screenshot_01.jpg`) is the most
 sky-adjacent fraud in this set. Therefore, **both the 0% false-positive rate
 and the 100% fraud-caught rate reported by this test are in-sample and
-optimistic**. As of this commit, the margins are: frauds range from
-`fraud_wall_02.jpg` at 0.0547 to above the 0.60 threshold, and skies range
-from `sky_clear_04.jpg` at 0.7831 to above the threshold, so the margins are
-not paper-thin. However, the `outdoor_score` values were not recorded
-systematically during tuning, so whether those tuning edits eroded margins or
-not is unknown.
+optimistic**. As of this commit: frauds top out at `fraud_wall_02.jpg`, 0.0547,
+the closest any fraud comes to the 0.60 gate, and still far below it. Honest
+skies bottom out at `sky_clear_04.jpg`, 0.7831. The threshold therefore sits
+inside a wide empty band, and nothing in this set is near it. However, this
+set contains no genuinely hard fraud — there is no photograph of a large screen
+displaying a full-frame sky — so a harder set would narrow the band. And the
+`outdoor_score` values were not recorded systematically during tuning, so
+whether those tuning edits eroded margins or not is unknown.
 
 None of this makes the test useless. Its real job is as a **regression guard**:
 it fails if a future prompt edit or model retrain breaks images that the
