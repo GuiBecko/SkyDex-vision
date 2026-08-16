@@ -47,9 +47,6 @@ async def analyze(
     A 400 means the bytes are not an image. There is no status here for "this
     photo is fraudulent" because this service does not have that opinion.
     """
-    if not (file.content_type or "").startswith("image/"):
-        raise HTTPException(status_code=400, detail="The uploaded file is not an image")
-
     payload = await file.read()
     try:
         outdoor, phenomenon = model.analyze(payload)

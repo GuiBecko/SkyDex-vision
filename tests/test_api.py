@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from app.main import app, get_model
+from app.model import InvalidImageError
 from app.prompts import GROUP_ORDER
 
 
@@ -74,11 +75,31 @@ def test_analyze_passes_the_uploaded_bytes_to_the_model(client, stub):
     assert stub.calls == [payload]
 
 
-def test_analyze_rejects_a_file_that_is_not_an_image(client, stub):
-    response = client.post(
-        "/v1/analyze",
-        files={"file": ("notes.txt", b"this is not an image", "text/plain")},
-    )
+class UnreadableImageModel:
+    """A model that cannot decode what it was handed.
+
+    The route's job on this path is one line long — turn InvalidImageError into
+    a 400 — so the test drives that contract directly instead of trying to
+    provoke the error through a stub that never looks at bytes. Whether Pillow
+    can open a given file is VisionModel's business and is covered where the
+    real model is exercised.
+    """
+
+    name = "stub-unreadable"
+
+    def analyze(self, image_bytes: bytes) -> tuple[float, dict[str, float]]:
+        raise InvalidImageError("The uploaded file is not a readable image")
+
+
+def test_analyze_answers_400_when_the_model_cannot_read_the_image(client):
+    app.dependency_overrides[get_model] = lambda: UnreadableImageModel()
+    try:
+        response = client.post(
+            "/v1/analyze",
+            files={"file": ("notes.txt", b"this is not an image", "text/plain")},
+        )
+    finally:
+        app.dependency_overrides.clear()
 
     assert response.status_code == 400
     assert "image" in response.json()["detail"].lower()
