@@ -1,6 +1,29 @@
 # Golden set — provisional
 
-30 images, 15 `sky` / 15 `fraud`, scored by `tests/test_accuracy.py`.
+30 images, 15 `sky` / 15 `fraud`, scored by two tests, one per head:
+
+- `tests/test_accuracy.py` uses all 30. It exercises the **outdoor** head —
+  the `sky`/`fraud` split in `manifest.csv` is its ground truth.
+- `tests/test_phenomenon_golden.py` uses the 15 `sky` rows. It exercises the
+  **phenomenon** head, and its ground truth is the group in the filename
+  (`sky_cloudy_04.jpg` → CLOUDY), standing in for what the weather API would
+  have reported at capture time. `sky_night_01.jpg` is scored but not judged:
+  the backend skips the phenomenon check at night, because CLIP cannot tell a
+  clear night from an overcast one. That test's bar is therefore 14
+  photographs, not 15.
+
+The second test arrived late — six commits after the first — and the gap
+between them was not free. For as long as only the outdoor head was measured
+here, nothing in this repo ever pointed the phenomenon head at a real
+photograph, and a probe shipped that scored a clear blue sky as FOG strongly
+enough for the backend to refuse it. Held-out Kaggle accuracy went *up* over
+that same period. If a third head is ever added, it wants its own row in this
+list on the same commit.
+
+Because the filename now carries the expected group, the naming convention is
+load-bearing rather than cosmetic: `sky_<group>_<nn>.jpg`, with `<group>` one
+of the six in `app/prompts.py::GROUP_ORDER`, or `night`. A `sky` row named
+anything else fails that test loudly rather than being quietly skipped.
 
 ## Status: provisional, not the real thing yet
 

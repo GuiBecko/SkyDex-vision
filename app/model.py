@@ -63,6 +63,28 @@ class VisionModel:
             features = self._model.encode_image(self._preprocess(image).unsqueeze(0))
         return features / features.norm(dim=-1, keepdim=True)
 
+    def zero_shot_phenomenon(self, image_features: torch.Tensor) -> dict[str, float]:
+        """Group scores from the untrained head, for an ``embed`` result.
+
+        Public because the phenomenon head has two implementations and the
+        golden-set comparison in tests/test_phenomenon_golden.py has to score
+        one embedding through both of them. Without this, that test would have
+        to reach into private state to re-derive one line of arithmetic.
+        """
+        similarities = (image_features @ self._phenomenon_features.T)[0].tolist()
+        return group_scores(similarities, GROUP_SIZES)
+
+    def probed_phenomenon(self, image_features: torch.Tensor) -> dict[str, float] | None:
+        """Group scores from the trained head, or ``None`` when no probe is mounted.
+
+        The ``None`` is a deployment switch, not an error: no ``data/probe.npz``
+        means the service runs zero-shot, which is a supported configuration.
+        Public for the same reason as ``zero_shot_phenomenon``.
+        """
+        if self._probe is None:
+            return None
+        return self._probe.apply(image_features[0].numpy())
+
     def analyze(self, image_bytes: bytes) -> tuple[float, dict[str, float]]:
         """``(outdoor_score, phenomenon_scores)`` for one photograph.
 
@@ -75,11 +97,9 @@ class VisionModel:
         outdoor_similarities = (image_features @ self._outdoor_features.T)[0].tolist()
         outdoor = outdoor_score(outdoor_similarities, sky_count=len(SKY_PROMPTS))
 
-        if self._probe is not None:
-            phenomenon = self._probe.apply(image_features[0].numpy())
-        else:
-            phenomenon_similarities = (image_features @ self._phenomenon_features.T)[0].tolist()
-            phenomenon = group_scores(phenomenon_similarities, GROUP_SIZES)
+        phenomenon = self.probed_phenomenon(image_features)
+        if phenomenon is None:
+            phenomenon = self.zero_shot_phenomenon(image_features)
 
         return outdoor, phenomenon
 

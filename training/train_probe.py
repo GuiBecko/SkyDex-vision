@@ -313,11 +313,39 @@ def load_or_embed(model_factory, source: Path, cache_path: Path) -> tuple[np.nda
     return features, labels
 
 
+def make_classifier() -> LogisticRegression:
+    """The estimator the shipped probe is fitted with.
+
+    A factory rather than a literal because `training/train.ipynb` cross-validates
+    this same configuration. When the two were spelled out separately, the
+    notebook's 5-fold number silently described an estimator nobody shipped.
+
+    ``class_weight="balanced"`` is the load-bearing argument. The training pool
+    is SNOW 2,420 / FOG 2,024 / STORM 968 / RAIN 621 / CLOUDY 362 / CLEAR 261:
+    FOG and SNOW are 67% of it, CLEAR is 3.9%. A multinomial logistic regression
+    fitted without weights inherits those priors, and inheriting them is correct
+    only if the deployment sees the same distribution — which it does not. Users
+    photograph the sky in front of them, not a Kaggle sample. Unweighted, the
+    probe pushed ambiguous real photographs toward FOG and SNOW hard enough that
+    the backend's contradiction matrix (which admits only FOG for FOG and only
+    SNOW for SNOW) refused an honest photograph of a clear blue sky. Weighting
+    each class inversely to its frequency states the prior we actually mean:
+    none. See tests/test_phenomenon_golden.py for the measurement.
+
+    ``multi_class`` is deliberately not passed. It was previously set to
+    "multinomial", which is what lbfgs already does for more than two classes
+    and what the default selects here; passing it explicitly only earns a
+    deprecation warning from scikit-learn 1.5. Verified identical coefficients
+    on this pool with and without it.
+    """
+    return LogisticRegression(max_iter=2000, C=1.0, class_weight="balanced")
+
+
 def train(source: Path, destination: Path) -> None:
     features, labels = load_or_embed(VisionModel, source, TRAIN_CACHE_PATH)
     print(f"\n{len(labels)} embeddings, distribution: {Counter(labels)}")
 
-    classifier = LogisticRegression(max_iter=2000, C=1.0, multi_class="multinomial")
+    classifier = make_classifier()
     classifier.fit(features, labels)
 
     predictions = classifier.predict(features)
