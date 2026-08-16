@@ -1,0 +1,21 @@
+# Applied to every pip install in this project, so a transitive dependency can
+# never quietly swap the CPU build for the CUDA one.
+#
+# open_clip_torch declares `torch>=1.9.0` with no upper bound and no index
+# preference. Installing it against the default PyPI index therefore resolves a
+# CUDA wheel and overwrites the CPU build installed moments earlier — which is
+# how a 1.5GB image becomes a 5GB one on a machine that has no NVIDIA GPU.
+#
+# torchvision is pinned alongside torch because open_clip_torch pulls it too and
+# the pair must match: torchvision 0.19.1 is the release built against torch 2.4.1.
+#
+# Canonical install sequence for this project:
+#
+#   python3.11 -m venv .venv
+#   .venv/bin/pip install --upgrade pip
+#   .venv/bin/pip install -r requirements-dev.txt \
+#       -c constraints.txt \
+#       --extra-index-url https://download.pytorch.org/whl/cpu
+#
+torch==2.4.1+cpu
+torchvision==0.19.1+cpu
