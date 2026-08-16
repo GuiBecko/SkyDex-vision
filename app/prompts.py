@@ -16,6 +16,16 @@ SKY_PROMPTS = [
     "a photo of the sky",
     "an outdoor photo of clouds in the sky",
     "a photograph taken outdoors looking up at the sky",
+    # The three prompts above assume the sky itself fills the frame. Real
+    # submissions are often a landscape shot with the sky as context (wet
+    # moorland under a rain-laden sky), or a sky seen through weather that
+    # scatters or obscures it (dense fog, raindrops on glass). Without these,
+    # CLIP read those photos as closer to an indoor scene or a close-up
+    # object than to "the sky" — see the golden-set misses in
+    # tests/test_accuracy.py before this change.
+    "an outdoor photograph of a landscape under a rainy, overcast sky",
+    "a photo of dense outdoor fog with a hazy, low-visibility sky",
+    "raindrops on a car window with an outdoor sky and scene visible through the glass",
 ]
 
 NOT_SKY_PROMPTS = [

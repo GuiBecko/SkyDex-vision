@@ -1,0 +1,31 @@
+filename,label,source
+sky_clear_01.jpg,sky,https://commons.wikimedia.org/wiki/File:Clear_day_on_the_Gold_Coast.jpg
+sky_clear_02.jpg,sky,https://commons.wikimedia.org/wiki/File:CondensationTrailInBlueSky.jpg
+sky_clear_03.jpg,sky,https://commons.wikimedia.org/wiki/File:Mountain_lake_and_a_clear_blue_sky_(54844909972).jpg
+sky_clear_04.jpg,sky,https://commons.wikimedia.org/wiki/File:DFC_2114_A_sandy_path_winds_over_grassy_dunes_toward_a_rocky_jetty_under_a_clear_blue_sky_at_the_beach.jpg
+sky_cloudy_01.jpg,sky,https://commons.wikimedia.org/wiki/File:Cloudy_Sky_(11204392144).jpg
+sky_cloudy_02.jpg,sky,https://commons.wikimedia.org/wiki/File:Cloudy_Sky_(11204385344).jpg
+sky_cloudy_03.jpg,sky,https://commons.wikimedia.org/wiki/File:Cloudy_Sky_(11204371415).jpg
+sky_cloudy_04.jpg,sky,https://commons.wikimedia.org/wiki/File:Grozny,_Russia,_Roof,_Cloudy_sky.jpg
+sky_rain_01.jpg,sky,https://commons.wikimedia.org/wiki/File:Wet_moorland_under_rain-laden_skies_-_geograph.org.uk_-_1473832.jpg
+sky_rain_02.jpg,sky,https://commons.wikimedia.org/wiki/File:More_rain_approaching_the_Doethie,_Ceredigion_-_geograph.org.uk_-_1417211.jpg
+sky_rain_03.jpg,sky,https://commons.wikimedia.org/wiki/File:Raindrops_on_car_window.jpg
+sky_storm_01.jpg,sky,https://commons.wikimedia.org/wiki/File:Thunderstorm_(115216569).jpeg
+sky_storm_02.jpg,sky,https://commons.wikimedia.org/wiki/File:Lightning_(215415019).jpeg
+sky_fog_01.jpg,sky,https://commons.wikimedia.org/wiki/File:Solitary_tree_at_foggy_morning.jpg
+sky_night_01.jpg,sky,https://commons.wikimedia.org/wiki/File:Night_sky_(140224109).jpg
+fraud_screenshot_01.jpg,fraud,own-screenshot (headless Chrome capture of forecast.weather.gov)
+fraud_screenshot_02.jpg,fraud,own-screenshot (headless Chrome capture of news.ycombinator.com)
+fraud_screenshot_03.jpg,fraud,own-screenshot (headless Chrome capture of raw.githubusercontent.com/python/cpython README)
+fraud_screenshot_04.jpg,fraud,own-screenshot (headless Chrome capture of en.wikipedia.org/wiki/File_manager)
+fraud_indoor_01.jpg,fraud,https://commons.wikimedia.org/wiki/File:Interieur_zitkamer_-_Living_Room_Interior_(5260601912).jpg
+fraud_indoor_02.jpg,fraud,https://commons.wikimedia.org/wiki/File:Interieur_woonkamer_-_Living_Room_Interior_(5260603106).jpg
+fraud_indoor_03.jpg,fraud,https://commons.wikimedia.org/wiki/File:Photographer%27s_Bedroom_(Unsplash).jpg
+fraud_selfie_01.jpg,fraud,https://commons.wikimedia.org/wiki/File:Laurel_Ptak_Closeup.jpg
+fraud_selfie_02.jpg,fraud,https://commons.wikimedia.org/wiki/File:Young_Man_(Imagicity_861).jpg
+fraud_wall_01.jpg,fraud,https://commons.wikimedia.org/wiki/File:Yellow_wall_(Unsplash).jpg
+fraud_wall_02.jpg,fraud,https://commons.wikimedia.org/wiki/File:Rectangle_stone_wall_(Unsplash).jpg
+fraud_screen_01.jpg,fraud,https://commons.wikimedia.org/wiki/File:ASUS_PB278Q_(PXL_20250914_223256075).jpg
+fraud_screen_02.jpg,fraud,https://commons.wikimedia.org/wiki/File:HTC_Evo_4G_Main_Screen.jpg
+fraud_object_01.jpg,fraud,https://commons.wikimedia.org/wiki/File:Gabel_--_2021_--_7220.jpg
+fraud_object_02.jpg,fraud,https://commons.wikimedia.org/wiki/File:Filzuntersetzer_--_2022_--_9752.jpg
