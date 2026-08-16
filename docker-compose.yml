@@ -1,0 +1,22 @@
+# The SkyDex backend itself still runs on the host via `./gradlew bootRun` --
+# it is the thing being developed, so it stays outside this compose network
+# and reaches skydex-vision through the published port. This service never
+# opens a database connection, so there is no database container here: the
+# backend's own Postgres lives in its own hand-managed container, entirely
+# outside this file.
+services:
+  skydex-vision:
+    build: .
+    container_name: skydex-vision
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mounted rather than baked so retraining does not need an image rebuild.
+      # Absent on a fresh checkout, which is fine -- the service falls back to
+      # zero-shot and says so in its model name.
+      - ./data:/srv/data:ro
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
