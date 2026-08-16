@@ -107,6 +107,75 @@ def _hamming(a: int, b: int) -> int:
     return bin(a ^ b).count("1")
 
 
+def _fingerprint_tree(root: Path) -> str:
+    """A cheap fingerprint of a directory tree, sufficient to detect that it
+    changed since a cache was written.
+
+    Deliberately does not hash file contents -- this runs over thousands of
+    images on every `train` invocation, and re-reading all of them would
+    defeat the point of caching. Sorted ``(relative_path, size, mtime_ns)``
+    triples change whenever a file is added, removed, or replaced (a replace
+    changes size and/or mtime; a rename changes the path), which is exactly
+    the set of edits `split_dataset` can make to `data/train`.
+    """
+    entries = sorted(
+        (str(path.relative_to(root)), path.stat().st_size, path.stat().st_mtime_ns)
+        for path in root.rglob("*")
+        if path.is_file()
+    )
+    return hashlib.sha256(repr(entries).encode()).hexdigest()
+
+
+def _load_cache(source: Path, cache_path: Path) -> tuple[np.ndarray, list[str]] | None:
+    """Return cached ``(features, labels)`` if ``cache_path`` exists and its
+    stored fingerprint matches ``source``'s current tree, else None.
+
+    Never raises for a missing or stale cache -- what to do about that (embed,
+    or refuse) is the caller's decision. Always prints why it returned what it
+    returned, so a stale cache is never reused silently.
+    """
+    fingerprint = _fingerprint_tree(source)
+
+    if not cache_path.exists():
+        print(f"cache miss: {cache_path} does not exist")
+        return None
+
+    payload = np.load(cache_path, allow_pickle=False)
+    cached_fingerprint = str(payload["fingerprint"]) if "fingerprint" in payload.files else None
+
+    if cached_fingerprint != fingerprint:
+        reason = (
+            "cache has no fingerprint (written before cache invalidation existed)"
+            if cached_fingerprint is None
+            else f"{source} has changed since the cache was written"
+        )
+        print(f"cache miss: {cache_path} is stale -- {reason}; recomputing")
+        return None
+
+    labels = [str(label) for label in payload["labels"]]
+    print(f"cache hit: {cache_path} fingerprint matches {source} ({len(labels)} embeddings)")
+    return payload["features"], labels
+
+
+def load_cache_or_raise(source: Path, cache_path: Path) -> tuple[np.ndarray, list[str]]:
+    """Load ``cache_path`` for ``source``, refusing a missing or stale cache.
+
+    For consumers -- like the notebook's cross-validation cell -- that must
+    not silently train or cross-validate on stale embeddings, but also must
+    not pay the cost of re-embedding thousands of images inline just to
+    validate a cache. If the cache is missing or stale, the fix is to re-run
+    `train_probe.py train`, not to embed here.
+    """
+    cached = _load_cache(source, cache_path)
+    if cached is None:
+        raise SystemExit(
+            f"{cache_path} is missing or stale for {source}; run "
+            "`.venv/bin/python training/train_probe.py train data/train data/probe.npz` "
+            "to refresh it before trusting this result"
+        )
+    return cached
+
+
 def _deduplicate(images: list[Path]) -> list[Path]:
     """Keep one file per distinct photograph, in stable sorted order.
 
@@ -144,16 +213,30 @@ def split_dataset(source: Path, train_root: Path, test_root: Path) -> None:
     Copies rather than moves, so the original archive extraction is left
     untouched.
 
-    Re-running is idempotent even if the source directory has gained or lost
-    files since the last run (which would otherwise shift every later index
-    and leave a stale copy from the old split sitting on the wrong side, quietly
-    recreating the exact contamination this function exists to prevent):
-    before writing, any existing destination file whose name appears anywhere
-    in the *current* source listing is removed. This is scoped to this
-    source's own filenames rather than a blanket ``rmtree`` because a
-    destination class directory can be shared with an unrelated dataset under
-    the same class name -- ``rain`` here is also fed directly from the Weather
-    Image Recognition dataset, which must be left untouched.
+    Re-running is idempotent with respect to files gained or replaced in the
+    source since the last run (either of which would otherwise shift what an
+    index-based split lands on the wrong side, quietly recreating the exact
+    contamination this function exists to prevent): before writing, every
+    existing destination file whose name is present anywhere in the *current*
+    source listing is removed, then re-copied fresh from this run's split.
+    This is scoped to the current source listing's filenames rather than a
+    blanket ``rmtree`` because a destination class directory can be shared
+    with an unrelated dataset under the same class name -- ``rain`` here is
+    also fed directly from the Weather Image Recognition dataset, which must
+    be left untouched.
+
+    This does NOT cover a file being *removed* from the source between runs:
+    a destination copy whose name is no longer present anywhere in the source
+    listing is not cleared, and survives as a stale leftover from the earlier
+    run. Removing that guarantee, too, would require distinguishing "this name
+    used to be in this source and is gone" from "this name has always
+    belonged to the other dataset sharing this class directory" -- the two
+    look identical from inside this function, since nothing records what a
+    previous run wrote. The Kaggle archives this function reads are static
+    downloads that do not lose files between runs, so this gap is not
+    currently reachable in practice; if that ever changes, the safe fix is an
+    explicit manifest of what this function wrote last time, not a broader
+    filename-based clear.
     """
     for class_dir in sorted(source.iterdir()):
         if not class_dir.is_dir():
@@ -170,7 +253,10 @@ def split_dataset(source: Path, train_root: Path, test_root: Path) -> None:
         test_dest.mkdir(parents=True, exist_ok=True)
 
         for dest in (train_dest, test_dest):
-            for existing in dest.iterdir():
+            # Materialise the listing before deleting: Path.iterdir() is a
+            # lazy os.scandir generator, and unlinking entries while it is
+            # still being consumed can skip entries in the same readdir pass.
+            for existing in list(dest.iterdir()):
                 if existing.name in source_names:
                     existing.unlink()
 
@@ -209,20 +295,20 @@ def embed_folder(model: VisionModel, root: Path) -> tuple[np.ndarray, list[str]]
 
 
 def load_or_embed(model_factory, source: Path, cache_path: Path) -> tuple[np.ndarray, list[str]]:
-    """Reuse a cached embedding of ``source`` if one exists, else compute and cache it.
+    """Reuse a cached embedding of ``source`` if it exists and still matches
+    ``source``'s current tree (see ``_fingerprint_tree``), else (re)compute
+    and cache it.
 
-    ``model_factory`` is only called on a cache miss, so a cached run does not
+    ``model_factory`` is only called on a cache miss, so a cache hit does not
     pay even the cost of loading CLIP.
     """
-    if cache_path.exists():
-        payload = np.load(cache_path, allow_pickle=False)
-        labels = [str(label) for label in payload["labels"]]
-        print(f"loaded {len(labels)} cached embeddings from {cache_path}")
-        return payload["features"], labels
+    cached = _load_cache(source, cache_path)
+    if cached is not None:
+        return cached
 
     features, labels = embed_folder(model_factory(), source)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(cache_path, features=features, labels=np.array(labels))
+    np.savez(cache_path, features=features, labels=np.array(labels), fingerprint=_fingerprint_tree(source))
     print(f"cached {len(labels)} embeddings to {cache_path}")
     return features, labels
 
