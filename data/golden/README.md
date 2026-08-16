@@ -31,20 +31,32 @@ against — would strengthen them too.
 
 ## In-sample tuning and regression signal
 
-The prompts in `app/prompts.py` have been tuned against this very golden set.
-Three new prompts were added to clear images that the original three would have
-rejected: an outdoor landscape under a rainy sky (wet moorland), dense outdoor
-fog (low visibility sky), and raindrops on a car window (weather seen through
-glass). The false-positive rate this test reports — currently 0% — is therefore
-**in-sample** and optimistic: a natural consequence of tuning toward the data
-we are measuring against.
+The prompts in `app/prompts.py` have been tuned against this very golden set,
+but **only the sky side** — `SKY_PROMPTS` was widened; `NOT_SKY_PROMPTS` was
+not. Three new sky prompts were added to clear images the original three would
+have rejected: an outdoor landscape under a rainy sky (wet moorland), dense
+outdoor fog (low visibility sky), and raindrops on a car window (weather seen
+through glass).
 
-That does not make the test useless. Its real job is as a **regression guard**:
+Widening `SKY_PROMPTS` raises `outdoor_score` for every sky-adjacent image.
+That includes frauds that are sky-adjacent — a weather forecast page dense with
+blue-sky graphics and sun icons (`fraud_screenshot_01.jpg`) is the most
+sky-adjacent fraud in this set. Therefore, **both the 0% false-positive rate
+and the 100% fraud-caught rate reported by this test are in-sample and
+optimistic**. As of this commit, the margins are: frauds range from
+`fraud_wall_02.jpg` at 0.0547 to above the 0.60 threshold, and skies range
+from `sky_clear_04.jpg` at 0.7831 to above the threshold, so the margins are
+not paper-thin. However, the `outdoor_score` values were not recorded
+systematically during tuning, so whether those tuning edits eroded margins or
+not is unknown.
+
+None of this makes the test useless. Its real job is as a **regression guard**:
 it fails if a future prompt edit or model retrain breaks images that the
 current prompts handle correctly. Regression detection does not require an
-unbiased accuracy estimate; it requires a stable baseline. The prompts we have
-are that baseline, and their 0% false-positive rate on this set is its
-measurement.
+unbiased accuracy estimate; it requires a stable baseline and visible margins.
+The prompts we have are that baseline, and the 0.0547–0.7831 margin is its
+measurement. The next person to edit the prompts can re-run this test and watch
+whether the margins shrink or grow.
 
 The unbiased estimate of how well the prompts generalize comes from elsewhere:
 the held-out Kaggle test set used in the next task, which the prompts have

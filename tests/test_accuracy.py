@@ -10,9 +10,11 @@ The golden set itself is provisional. See data/golden/README.md: the `sky`
 half is openly-licensed Wikimedia camera photography rather than phone photos
 taken in this deployment's actual conditions, so this test calibrates the
 threshold but does not yet prove domain fit. The prompts in app/prompts.py have
-been tuned against this set, so the false-positive rate reported here is a
-regression signal, not a generalization estimate — the true accuracy comes from
-the held-out Kaggle set in the next task.
+been tuned against this set — specifically, only SKY_PROMPTS was widened, which
+raises outdoor_score for sky-adjacent images including frauds — so both the
+false-positive rate and the fraud-caught rate reported here are regression
+signals, not generalization estimates. The true accuracy comes from the
+held-out Kaggle set in the next task.
 """
 
 import csv
@@ -67,6 +69,11 @@ def test_outdoor_head_meets_the_go_live_bar():
     caught, frauds = 0, 0
     misses: list[str] = []
 
+    min_sky_score = float('inf')
+    min_sky_name = ""
+    max_fraud_score = float('-inf')
+    max_fraud_name = ""
+
     for path, label in manifest:
         assert path.exists(), f"manifest names a missing file: {path}"
         outdoor, _ = model.analyze(path.read_bytes())
@@ -74,11 +81,17 @@ def test_outdoor_head_meets_the_go_live_bar():
 
         if label == "sky":
             skies += 1
+            if outdoor < min_sky_score:
+                min_sky_score = outdoor
+                min_sky_name = path.name
             if not accepted:
                 false_positives += 1
                 misses.append(f"REJECTED A REAL SKY  {path.name}  outdoor={outdoor:.3f}")
         else:
             frauds += 1
+            if outdoor > max_fraud_score:
+                max_fraud_score = outdoor
+                max_fraud_name = path.name
             if not accepted:
                 caught += 1
             else:
@@ -89,6 +102,7 @@ def test_outdoor_head_meets_the_go_live_bar():
 
     print(f"\nfalse positive rate: {false_positive_rate:.1%} (bar: {MAX_FALSE_POSITIVE_RATE:.0%})")
     print(f"fraud caught rate:   {caught_rate:.1%} (bar: {MIN_FRAUD_CAUGHT_RATE:.0%})")
+    print(f"margin: max fraud {max_fraud_name} {max_fraud_score:.4f}, min sky {min_sky_name} {min_sky_score:.4f}")
     for line in misses:
         print("  " + line)
 
