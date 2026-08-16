@@ -7,17 +7,21 @@ CPU core for ViT-B/32.
 """
 
 import io
+import os
 from functools import lru_cache
+from pathlib import Path
 
 import open_clip
 import torch
 from PIL import Image, UnidentifiedImageError
 
+from app.probe import Probe, load_probe
 from app.prompts import GROUP_SIZES, OUTDOOR_PROMPTS, PHENOMENON_PROMPTS, SKY_PROMPTS
 from app.scoring import group_scores, outdoor_score
 
 MODEL_ARCHITECTURE = "ViT-B-32"
 MODEL_WEIGHTS = "laion2b_s34b_b79k"
+PROBE_PATH = Path(os.environ.get("SKYDEX_PROBE_PATH", "data/probe.npz"))
 
 
 class InvalidImageError(ValueError):
@@ -37,7 +41,9 @@ class VisionModel:
         self._outdoor_features = self._encode_text(tokenizer, OUTDOOR_PROMPTS)
         self._phenomenon_features = self._encode_text(tokenizer, PHENOMENON_PROMPTS)
 
-        self.name = f"clip-{MODEL_ARCHITECTURE.lower()}-zeroshot-v1"
+        self._probe: Probe | None = load_probe(PROBE_PATH)
+        suffix = "probe-v1" if self._probe else "zeroshot-v1"
+        self.name = f"clip-{MODEL_ARCHITECTURE.lower()}-{suffix}"
 
     def _encode_text(self, tokenizer, texts: list[str]) -> torch.Tensor:
         with torch.no_grad():
@@ -58,16 +64,24 @@ class VisionModel:
         return features / features.norm(dim=-1, keepdim=True)
 
     def analyze(self, image_bytes: bytes) -> tuple[float, dict[str, float]]:
-        """``(outdoor_score, phenomenon_scores)`` for one photograph."""
+        """``(outdoor_score, phenomenon_scores)`` for one photograph.
+
+        The outdoor head is always zero-shot. Only the phenomenon head is
+        trained, because the fraud catalogue in NOT_SKY_PROMPTS is a moving
+        target that prompts express better than a fixed training set does.
+        """
         image_features = self.embed(image_bytes)
 
         outdoor_similarities = (image_features @ self._outdoor_features.T)[0].tolist()
-        phenomenon_similarities = (image_features @ self._phenomenon_features.T)[0].tolist()
+        outdoor = outdoor_score(outdoor_similarities, sky_count=len(SKY_PROMPTS))
 
-        return (
-            outdoor_score(outdoor_similarities, sky_count=len(SKY_PROMPTS)),
-            group_scores(phenomenon_similarities, GROUP_SIZES),
-        )
+        if self._probe is not None:
+            phenomenon = self._probe.apply(image_features[0].numpy())
+        else:
+            phenomenon_similarities = (image_features @ self._phenomenon_features.T)[0].tolist()
+            phenomenon = group_scores(phenomenon_similarities, GROUP_SIZES)
+
+        return outdoor, phenomenon
 
 
 @lru_cache(maxsize=1)
