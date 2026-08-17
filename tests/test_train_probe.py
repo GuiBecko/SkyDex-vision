@@ -7,6 +7,7 @@ fast suite rather than behind `-m slow`.
 
 import numpy as np
 
+from training import train_probe
 from training.train_probe import _fingerprint_tree, _load_cache
 
 
@@ -95,3 +96,20 @@ def test_fingerprint_is_stable_for_an_unchanged_tree(tmp_path):
     _write_tree(source, {"a/1.jpg": b"one", "b/2.jpg": b"two"})
 
     assert _fingerprint_tree(source) == _fingerprint_tree(source)
+
+
+def test_fingerprint_changes_when_image_suffixes_change(tmp_path, monkeypatch):
+    """IMAGE_SUFFIXES decides which files `embed_folder` treats as candidates
+    at all, so it belongs in the fingerprint alongside SOURCE_TO_GROUP,
+    MODEL_ARCHITECTURE and MODEL_WEIGHTS -- otherwise widening or narrowing
+    it (adding `.webp`, say) changes what a cache hit stands in for while the
+    tree's file listing stays byte-identical, and a stale cache would be
+    reused silently."""
+    source = tmp_path / "source"
+    _write_tree(source, {"a/1.jpg": b"one", "a/2.png": b"two"})
+
+    before = _fingerprint_tree(source)
+    monkeypatch.setattr(train_probe, "IMAGE_SUFFIXES", {".jpg", ".jpeg", ".png", ".webp"})
+    after = _fingerprint_tree(source)
+
+    assert before != after

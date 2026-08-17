@@ -84,14 +84,17 @@ IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 # recompressed or resized", and `_deduplicate` drops on that distance alone --
 # it performs no pixel comparison of any kind.
 #
-# The tier is 3 rather than an arbitrary guess because an offline review of this
-# exact dataset measured 32x32 RGB mean-absolute-difference for the pairs it
-# matches (under 6, against a same-class random-pair baseline of ~59.8). That
-# measurement chose the constant; it is not a step the code repeats, so a
-# removal here is a dHash match and nothing stronger. It over-removes, and the
-# asymmetry is why that is accepted: over-removal costs a few hundred images out
-# of a 6,656-image pool and moved 5-fold CV by 0.0000, while under-removal
-# leaks a photograph across the split and inflates every number after it.
+# The tier is 3 rather than an arbitrary guess because an offline review of
+# this exact dataset measured this threshold's false-positive rate at 43%: of
+# the pairs dHash<=3 calls duplicates, pixel comparison showed nearly half to
+# be distinct photographs, not a recompression or resize of the same one. That
+# measurement is not a step the code repeats -- a removal here is a dHash match
+# and nothing stronger -- and the 43% is accepted rather than tightened because
+# the error is one-directional: this tier only ever removes, it never lets a
+# true duplicate leak across the split. A false positive costs one discarded
+# photograph; over-removal on this pool cost a few hundred images out of 6,656
+# and moved 5-fold CV by 0.0000, while under-removal would leak a photograph
+# across the split and inflate every number after it.
 NEAR_DUPLICATE_DHASH_DISTANCE = 3
 
 # The slow part of this whole pipeline is embedding images on CPU (minutes);
@@ -146,11 +149,17 @@ def _fingerprint_tree(root: Path) -> str:
     3. **The CLIP checkpoint**, which decides the features. Bumping
        MODEL_ARCHITECTURE or MODEL_WEIGHTS makes every cached embedding a
        vector from a different model in a different space.
+    4. **IMAGE_SUFFIXES**, which decides which files in the tree are even
+       candidates for embedding. `embed_folder` filters on it per class, so
+       widening or narrowing the set -- adding `.webp`, say -- changes which
+       files a cache hit is silently standing in for, while the tree entries
+       above (which enumerate *every* file, filtered or not) stay identical.
 
-    Without 2 and 3 the fingerprint matched, `_load_cache` printed `cache hit`,
-    and the retrain silently refitted on stale labels or stale embeddings --
-    twice caught in review, which is why this docstring enumerates rather than
-    summarises. Anything new that feeds `embed_folder` belongs in this list.
+    Without 2, 3 and 4 the fingerprint matched, `_load_cache` printed
+    `cache hit`, and the retrain silently refitted on stale labels or stale
+    embeddings -- three times caught in review, which is why this docstring
+    enumerates rather than summarises. Anything new that feeds `embed_folder`
+    belongs in this list.
     """
     entries = sorted(
         (str(path.relative_to(root)), path.stat().st_size, path.stat().st_mtime_ns)
@@ -163,6 +172,7 @@ def _fingerprint_tree(root: Path) -> str:
             sorted(SOURCE_TO_GROUP.items()),
             MODEL_ARCHITECTURE,
             MODEL_WEIGHTS,
+            sorted(IMAGE_SUFFIXES),
         )
     )
     return hashlib.sha256(payload.encode()).hexdigest()
