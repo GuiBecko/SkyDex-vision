@@ -18,10 +18,18 @@ DEFAULT_TEMPERATURE = 100.0
 def softmax(values: Sequence[float], temperature: float = DEFAULT_TEMPERATURE) -> list[float]:
     """A numerically stable softmax over ``values`` scaled by ``temperature``.
 
-    The max is subtracted before exponentiating. Without it, a similarity of
-    0.9 at temperature 100 becomes exp(90), which is finite but close enough to
-    the ceiling that a slightly wider spread overflows to inf and poisons the
-    whole vector with nan.
+    The max is subtracted before exponentiating. That is standard practice, not
+    a fix for anything this module's own callers can reach: they pass cosine
+    similarities, which are bounded in [-1, 1], so at DEFAULT_TEMPERATURE the
+    largest possible logit is 100 and exp(100) is 2.7e43 — 265 orders of
+    magnitude below the float64 ceiling of ~1.8e308. Overflowing would take a
+    similarity of about 7.1, and cosine similarity cannot produce one.
+
+    It stays because it costs one subtraction and ``temperature`` is a
+    parameter a caller may set to anything, so the function should be safe at
+    scales this module does not currently use. ``probe.Probe.apply`` runs the
+    same stabilisation for a stronger reason: its logits are genuinely
+    unbounded, so there it is load-bearing rather than defensive.
     """
     if not values:
         raise ValueError("softmax needs at least one value")

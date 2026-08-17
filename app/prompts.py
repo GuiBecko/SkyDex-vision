@@ -3,8 +3,16 @@
 Prompt wording carries most of the accuracy in a zero-shot CLIP classifier.
 "rain" and "a photo of a rainy overcast sky, raindrops, wet ground" are not
 close in embedding space, and the gap between them is several accuracy points.
-Treat this file as a tunable parameter, not as boilerplate — and re-run
-tests/test_accuracy.py after every edit.
+Treat this file as a tunable parameter, not as boilerplate. Which regression an
+edit needs depends on which half of the file it touched, and the two do not
+overlap:
+
+- SKY_PROMPTS / NOT_SKY_PROMPTS — the outdoor head — tests/test_accuracy.py
+- GROUP_PROMPTS — the zero-shot phenomenon head — tests/test_phenomenon_golden.py
+
+`test_accuracy.py` cannot observe GROUP_PROMPTS at all, so a maintainer who
+rewrites every phenomenon prompt, re-runs only that test and sees green has
+measured nothing. `.venv/bin/pytest -s -m slow` runs both.
 """
 
 # --- Head 1: is this an outdoor sky? -------------------------------------------------
@@ -21,8 +29,9 @@ SKY_PROMPTS = [
     # moorland under a rain-laden sky), or a sky seen through weather that
     # scatters or obscures it (dense fog, raindrops on glass). Without these,
     # CLIP read those photos as closer to an indoor scene or a close-up
-    # object than to "the sky" — see the golden-set misses in
-    # tests/test_accuracy.py before this change.
+    # object than to "the sky". The misses that prompted this are recorded in
+    # data/golden/README.md's "In-sample tuning" section — the repository state
+    # that produced them no longer exists, so there is nothing left to re-run.
     "an outdoor photograph of a landscape under a rainy, overcast sky",
     "a photo of dense outdoor fog with a hazy, low-visibility sky",
     "raindrops on a car window with an outdoor sky and scene visible through the glass",

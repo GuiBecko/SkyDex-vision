@@ -1,8 +1,17 @@
 """Golden-set regression for the outdoor head.
 
-This is the test that decides whether phase 3 of the SkyDex integration ships.
+One of the two tests that decide whether phase 3 of the SkyDex integration
+ships, and it covers the **outdoor** head only. `tests/test_phenomenon_golden.py`
+covers the phenomenon head; neither stands in for the other, and for six
+commits this file was the only one of the pair, which is how a probe that
+scored clear blue skies as FOG shipped with everything green.
+
 It is slow — it loads the real model — so it is marked and excluded from the
-fast suite. Run it after every prompt edit and after every probe retrain.
+fast suite. Run it after every edit to SKY_PROMPTS or NOT_SKY_PROMPTS. A probe
+retrain cannot move these numbers by construction — the outdoor head is always
+zero-shot, see `app/model.py::VisionModel.analyze` — so a retrain wants
+`tests/test_phenomenon_golden.py`. Running both after either change costs
+seconds: `.venv/bin/pytest -s -m slow`.
 
     .venv/bin/pytest tests/test_accuracy.py -v -s -m slow
 
@@ -13,8 +22,9 @@ threshold but does not yet prove domain fit. The prompts in app/prompts.py have
 been tuned against this set — specifically, only SKY_PROMPTS was widened, which
 raises outdoor_score for sky-adjacent images including frauds — so both the
 false-positive rate and the fraud-caught rate reported here are regression
-signals, not generalization estimates. The true accuracy comes from the
-held-out Kaggle set in the next task.
+signals, not generalization estimates. The nearest thing to an unbiased
+estimate this repo has is the held-out Kaggle measurement in
+`training/train.ipynb` — and it covers the phenomenon head, not this one.
 """
 
 import csv
@@ -26,9 +36,13 @@ from app.model import load_model
 
 GOLDEN = Path(__file__).parent.parent / "data" / "golden"
 
-# The threshold the SkyDex backend will use for stage 1. Keep this in sync with
-# skydex.vision.outdoor-min in the backend's application.properties — a drift
-# between the two means this test measures something nobody runs.
+# The threshold the SkyDex backend will use for stage 1, as
+# `skydex.vision.outdoor-min`. That property does not exist in the backend yet;
+# it is specified at docs/superpowers/plans/2026-08-16-skydex-ai-validation-integration.md,
+# which also has not been executed, so grepping
+# SkyDex-backend/src/main/resources/application.properties for it finds nothing
+# today. Once the plan runs, keep the two in sync — a drift between them means
+# this test measures something nobody runs.
 OUTDOOR_THRESHOLD = 0.60
 
 # The go-live bar from the spec. False positives are honest skies rejected as
@@ -63,7 +77,7 @@ def load_manifest() -> list[tuple[Path, str]]:
 def test_outdoor_head_meets_the_go_live_bar():
     model = load_model()
     manifest = load_manifest()
-    assert manifest, "the golden set is empty — see Task 5 step 1"
+    assert manifest, "the golden set is empty — see data/golden/README.md"
 
     false_positives, skies = 0, 0
     caught, frauds = 0, 0

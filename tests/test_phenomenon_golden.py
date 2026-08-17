@@ -40,11 +40,21 @@ from app.prompts import GROUP_ORDER
 
 GOLDEN = Path(__file__).parent.parent / "data" / "golden"
 
-# --- Duplicated from the Kotlin backend ---------------------------------------------
+# --- Duplicated from the Kotlin backend's specification -----------------------------
 #
-# SOURCE OF TRUTH: `PhotoAuthenticityService` in the SkyDex Kotlin backend owns
-# the stage-2 phenomenon decision — this matrix and both gate constants. The
-# copy below is a duplicate, and duplicates drift.
+# SOURCE OF TRUTH: `PhotoAuthenticityService` in the SkyDex Kotlin backend will
+# own the stage-2 phenomenon decision — this matrix and both gate constants.
+# That class does not exist yet. It is specified, in Kotlin, at
+#
+#     docs/superpowers/plans/2026-08-16-skydex-ai-validation-integration.md
+#
+# as `PhotoAuthenticityService.contradicts` and its `RECONCILABLE` companion
+# map, with the two gates bound to `skydex.vision.expected-score-max` and
+# `skydex.vision.top-score-min`. The copy below was transcribed from there row
+# for row. So grepping the backend for the class name finds nothing today —
+# read the plan instead. Once that plan is executed the Kotlin becomes the
+# source of truth and this becomes the duplicate: change one, grep for the
+# other, and make the Kotlin carry a pointer back to this file.
 #
 # The duplication is unavoidable here: this service returns numbers only and
 # has no opinion about verdicts, but the question this test exists to answer
@@ -53,7 +63,7 @@ GOLDEN = Path(__file__).parent.parent / "data" / "golden"
 # is running end to end — is what let the FOG problem survive seven tasks.
 #
 # If these three values and the Kotlin ones ever disagree, this test measures a
-# decision nobody makes. Change one, grep for the other.
+# decision nobody makes.
 
 # A capture is refused only when the expected group is this far down AND some
 # other group is this far up. One gate alone is not enough: a photograph whose
@@ -120,26 +130,58 @@ def load_sky_photographs() -> list[tuple[Path, str, bool]]:
 def safety_margin(expected: str, scores: dict[str, float]) -> float:
     """How far this photograph is from being refused. Negative means refused.
 
-    Escaping the block needs only one of the two numeric gates to hold, so the
-    distance to the block is the *better* of the two slacks: how far the
-    expected group's score sits above the floor, and how far the top group's
-    score sits below the ceiling. Returned as one number so a regression that
-    halves the slack without crossing zero is still visible in the table.
+    Refusal needs *both* numeric gates — the expected group below the floor and
+    some rival above the ceiling — so escaping needs only one of them, and the
+    distance to refusal is the better of the two slacks: how far the expected
+    group's score sits above the floor, and how far the strongest *rival*
+    group's score sits below the ceiling.
+
+    The rival, not the top group. Those are the same thing whenever the head is
+    wrong about the top group, which is the case this number is really about.
+    They differ when the expected group *is* the top group, and measuring
+    against the top group there measured the expected group against itself:
+    the margin became ``max(s - 0.10, 0.70 - s)``, which bottoms out at +0.300
+    around s = 0.40 and then *rises* as s falls further. A head degrading from
+    CLEAR 0.360 to CLEAR 0.200 printed +0.340 and then +0.500, reading as a
+    safer photograph. Against the strongest rival there is no such branch:
+    probability mass leaving the expected group has to arrive somewhere else,
+    so both slacks shrink together and no degradation can move this number away
+    from zero. That is what makes it worth watching in the table — a regression
+    that halves the slack without crossing zero is visible before it fails.
+
+    The sign is unchanged by that switch, so this is still exactly the block
+    condition. A margin can only go negative when some group is above 0.70, and
+    a group above 0.70 while the expected group is below 0.10 is necessarily
+    the top group.
 
     The matrix is not folded in here: a reconcilable pair is safe outright, no
     matter what the numbers say. Callers report that separately, because a
     reconcilable photograph with a margin of -0.2 is a photograph that would be
     refused the moment the weather API reported a different group for it.
     """
-    top = max(scores, key=scores.get)
-    return max(scores[expected] - EXPECTED_SCORE_MAX, TOP_SCORE_MIN - scores[top])
+    expected_score = scores.get(expected, 0.0)
+    rival = max((score for group, score in scores.items() if group != expected), default=0.0)
+    return max(expected_score - EXPECTED_SCORE_MAX, TOP_SCORE_MIN - rival)
 
 
 def is_blocked(expected: str, scores: dict[str, float], is_day: bool) -> bool:
-    """The backend's stage-2 decision, reproduced. See the duplication note above."""
+    """The backend's stage-2 decision, reproduced. See the duplication note above.
+
+    Degrades to "no opinion" on anything it cannot evaluate, matching the
+    planned Kotlin line for line: `contradicts` does
+    `VisualGroup.fromNameOrNull(top.key) ?: return false` and
+    `scores[expectedGroup.name] ?: 0.0`, because "a check that did not run must
+    never cost a user their capture". This copy used to index the matrix and
+    the score dict directly, so a group name from a newer model would have
+    raised KeyError here and returned false there. Unreachable today — both
+    sides share GROUP_ORDER and `load_probe` refuses unknown names — but the
+    two copies must not diverge on the first seventh group.
+    """
     if not is_day or not scores:
         return False
     top = max(scores, key=scores.get)
+    if top not in GROUP_ORDER or expected not in GROUP_ORDER:
+        return False
     if top in RECONCILABLE_WITH_EXPECTED[expected]:
         return False
     return safety_margin(expected, scores) < 0
@@ -148,12 +190,15 @@ def is_blocked(expected: str, scores: dict[str, float], is_day: bool) -> bool:
 def report(head: str, rows: list[tuple[str, str, bool, dict[str, float]]]) -> int:
     """Print the per-photo table for one head and return the number blocked."""
     print(f"\n--- {head} ---")
-    print(f"{'photograph':<22} {'expected':<9} {'top group':<15} {'expected':<9} {'margin':<9} verdict")
+    print(
+        f"{'photograph':<22} {'expected':<9} {'top group':<15} "
+        f"{'exp score':<9} {'margin':<9} verdict"
+    )
     blocked = 0
     for name, expected, is_day, scores in rows:
         top = max(scores, key=scores.get)
         margin = safety_margin(expected, scores)
-        reconcilable = top in RECONCILABLE_WITH_EXPECTED[expected]
+        reconcilable = top in RECONCILABLE_WITH_EXPECTED.get(expected, set())
 
         if not is_day:
             verdict = "night — phenomenon check skipped"
@@ -167,7 +212,7 @@ def report(head: str, rows: list[tuple[str, str, bool, dict[str, float]]]) -> in
 
         print(
             f"{name:<22} {expected:<9} {top + ' ' + format(scores[top], '.3f'):<15} "
-            f"{scores[expected]:<9.3f} {margin:<+9.3f} {verdict}"
+            f"{scores.get(expected, 0.0):<9.3f} {margin:<+9.3f} {verdict}"
         )
     return blocked
 
@@ -267,3 +312,67 @@ def test_both_phenomenon_heads_are_compared_on_real_photographs(golden_scores):
 
     assert blocked_zero_shot <= MAX_BLOCKED_HONEST_PHOTOGRAPHS
     assert blocked_probe <= MAX_BLOCKED_HONEST_PHOTOGRAPHS
+
+
+# --- The decision itself, on hand-written scores -------------------------------------
+#
+# Fast, unmarked, no model: `safety_margin` and `is_blocked` are arithmetic over a
+# score dict, and the properties below are the ones the slow tests above rely on
+# but cannot demonstrate — a golden set of 15 photographs samples the score space
+# far too sparsely to show that the margin never rewards a worse head.
+
+
+def _degrade(scores: dict[str, float], expected: str, amount: float) -> dict[str, float]:
+    """Move ``amount`` of probability mass off ``expected``, spread over the rest."""
+    others = [group for group in scores if group != expected]
+    return {
+        group: (scores[group] - amount if group == expected else scores[group] + amount / len(others))
+        for group in scores
+    }
+
+
+def test_safety_margin_never_rises_as_the_head_degrades():
+    # The property the docstring promises and the old top-group form broke: a
+    # head losing confidence in the expected group must never print a larger
+    # margin. Walked over the whole range, including the top == expected branch
+    # the old form was U-shaped on (it bottomed out at +0.300 near 0.40 and rose
+    # from there, so CLEAR 0.360 -> 0.200 read as *safer*).
+    scores = {group: 0.08 for group in GROUP_ORDER}
+    scores["CLEAR"] = 1.0 - 0.08 * 5
+
+    previous = safety_margin("CLEAR", scores)
+    for _ in range(55):
+        scores = _degrade(scores, "CLEAR", 0.01)
+        current = safety_margin("CLEAR", scores)
+        assert current <= previous + 1e-12, f"margin rose to {current} from {previous} at {scores}"
+        previous = current
+
+
+def test_safety_margin_is_negative_exactly_when_the_gates_block():
+    # The sign is the whole contract: `is_blocked` reads it. Both gates are
+    # strict, matching the Kotlin's `expectedScore < max && top > min`.
+    for expected_score in (0.02, 0.09, 0.10, 0.30):
+        for top_score in (0.50, 0.70, 0.71, 0.95):
+            scores = {group: 0.0 for group in GROUP_ORDER}
+            scores["CLEAR"] = expected_score
+            scores["SNOW"] = top_score
+            gates_block = expected_score < EXPECTED_SCORE_MAX and top_score > TOP_SCORE_MIN
+            assert (safety_margin("CLEAR", scores) < 0) is gates_block
+
+
+def test_is_blocked_says_nothing_about_a_group_it_has_never_heard_of():
+    # A group name from a newer model must cost nobody their capture. The
+    # planned Kotlin returns false via `VisualGroup.fromNameOrNull(top.key) ?:
+    # return false`; this copy used to raise KeyError instead.
+    scores = {"CLEAR": 0.01, "TORNADO": 0.99}
+
+    assert is_blocked("CLEAR", scores, is_day=True) is False
+
+
+def test_is_blocked_skips_a_night_photograph_and_an_empty_analysis():
+    confident_contradiction = {group: 0.0 for group in GROUP_ORDER}
+    confident_contradiction["SNOW"] = 0.99
+
+    assert is_blocked("CLEAR", confident_contradiction, is_day=True) is True
+    assert is_blocked("CLEAR", confident_contradiction, is_day=False) is False
+    assert is_blocked("CLEAR", {}, is_day=True) is False

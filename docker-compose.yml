@@ -14,6 +14,12 @@ services:
       # Mounted rather than baked so retraining does not need an image rebuild.
       # Absent on a fresh checkout, which is fine -- the service falls back to
       # zero-shot and says so in its model name.
+      #
+      # A probe that is *present but broken* -- corrupt, wrongly labelled, or
+      # missing one of the six groups -- is a different case and is not
+      # tolerated. app/main.py loads the model in the application lifespan, so
+      # that container exits at startup and the healthcheck below goes red
+      # instead of reporting a healthy service whose every /v1/analyze 500s.
       - ./data:/srv/data:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]

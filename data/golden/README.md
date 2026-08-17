@@ -27,7 +27,7 @@ anything else fails that test loudly rather than being quietly skipped.
 
 ## Status: provisional, not the real thing yet
 
-Task 5 as briefed asks for 15 real skies "from your own phone" — actual
+The original task brief asks for 15 real skies "from your own phone" — actual
 captures from actual cameras that will point at actual weather, because
 "the public datasets do not contain the fraud you are trying to block."
 
@@ -47,7 +47,7 @@ close-up objects), also sourced from Wikimedia Commons.
 
 **Before this set is trusted as the go-live gate**, replace the `sky` rows
 with actual phone photos of actual skies, spread across the conditions listed
-in the task brief (4 clear, 4 cloudy, 3 rain, 2 storm, 1 fog, 1 night). The
+below (4 clear, 4 cloudy, 3 rain, 2 storm, 1 fog, 1 night). The
 `fraud` rows are more defensible as-is, but a few real phone-camera shots of
 an indoor room or a blank wall — the actual failure mode being guarded
 against — would strengthen them too.
@@ -84,10 +84,13 @@ measurement. The next person to edit the prompts can re-run this test and watch
 whether the margins shrink or grow.
 
 The unbiased estimate of how well the prompts generalize comes from elsewhere:
-the held-out Kaggle test set used in the next task, which the prompts have
-never been tuned against. That is where we learn whether a 0% false-positive
-rate on Wikimedia Commons photos (the sky half of this set) also holds for
-phone photos taken in this deployment's actual conditions.
+the held-out Kaggle test set, which the prompts have never been tuned against.
+That measurement now exists — it is in `training/train.ipynb` — but it covers
+the **phenomenon** head, not the outdoor one, because the probe is the only
+half of this service with a training set. There is still no unbiased estimate
+of whether a 0% false-positive rate on Wikimedia Commons photos (the sky half
+of this set) also holds for phone photos taken in this deployment's actual
+conditions. Getting one needs the replacement `sky` rows described above.
 
 ## Provenance
 
@@ -113,5 +116,5 @@ resolution, then normalized with Pillow to a 1024px long edge, quality 85,
 stripped to plain RGB JPEG. There is no single script that reproduces this
 set end-to-end — the sourcing (picking which photograph represents "storm"
 vs "rain") was manual curation against Commons search results, which is
-exactly the manual step Task 5 expects a human to do with their own camera
+exactly the manual step the task brief expects a human to do with their own camera
 roll instead.

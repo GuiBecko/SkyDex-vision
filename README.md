@@ -26,7 +26,7 @@ Python 3.11 (not 3.14 — PyTorch has no wheels for it):
 wheel straight over the CPU one, which is how this install balloons by
 several gigabytes on a machine with no NVIDIA GPU.
 
-The fast suite is 34 passed, 3 deselected. The three deselected ones load the
+The fast suite is 45 passed, 3 deselected. The three deselected ones load the
 real model, so they are marked `slow`, and there is one per head:
 
 - `tests/test_accuracy.py` — the **outdoor** head against the golden set:
@@ -69,6 +69,14 @@ hand.
 
 Without `data/probe.npz` the service runs zero-shot and reports
 `clip-vit-b-32-zeroshot-v1` as its model name. With it, `...-probe-v1`.
+
+A probe that is present but broken — corrupt, carrying a group name outside
+`GROUP_ORDER`, or missing one of the six — is refused rather than skipped. The
+model is loaded in the application's lifespan, so the process fails at startup
+and the container goes unhealthy; it does not start up, report healthy and then
+500 every request. Silently serving the zero-shot fallback instead would hide a
+failed deploy, and this service has already once shipped a probe that quietly
+underperformed zero-shot on real photographs for seven tasks.
 
 ## The contract
 

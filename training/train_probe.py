@@ -47,8 +47,18 @@ from PIL import Image
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, confusion_matrix
 
-from app.model import VisionModel
-from app.prompts import GROUP_ORDER
+# Running this file as a script puts `training/` on sys.path[0], not the repo
+# root, so the `from app...` imports below fail with ModuleNotFoundError before
+# argument parsing has even started. Every command in this module's docstring,
+# in README.md's retrain section and in load_cache_or_raise's error message
+# invokes it exactly that way -- including the one that fires when a reader is
+# already stuck on a stale cache -- so the bootstrap belongs here rather than
+# in a PYTHONPATH the four call sites would each have to remember. The notebook
+# does the same thing in its first cell.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from app.model import MODEL_ARCHITECTURE, MODEL_WEIGHTS, VisionModel  # noqa: E402
+from app.prompts import GROUP_ORDER  # noqa: E402
 
 SOURCE_TO_GROUP = {
     "dew": "FOG",
@@ -71,9 +81,17 @@ SOURCE_TO_GROUP = {
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 
 # A dHash Hamming distance at or below this is treated as "the same photograph,
-# recompressed or resized". Matches the tier a code review confirmed against
-# this exact dataset (32x32 RGB mean-abs-diff < 6 against a same-class random-pair
-# baseline of ~59.8), rather than an arbitrary guess.
+# recompressed or resized", and `_deduplicate` drops on that distance alone --
+# it performs no pixel comparison of any kind.
+#
+# The tier is 3 rather than an arbitrary guess because an offline review of this
+# exact dataset measured 32x32 RGB mean-absolute-difference for the pairs it
+# matches (under 6, against a same-class random-pair baseline of ~59.8). That
+# measurement chose the constant; it is not a step the code repeats, so a
+# removal here is a dHash match and nothing stronger. It over-removes, and the
+# asymmetry is why that is accepted: over-removal costs a few hundred images out
+# of a 6,656-image pool and moved 5-fold CV by 0.0000, while under-removal
+# leaks a photograph across the split and inflates every number after it.
 NEAR_DUPLICATE_DHASH_DISTANCE = 3
 
 # The slow part of this whole pipeline is embedding images on CPU (minutes);
@@ -108,22 +126,46 @@ def _hamming(a: int, b: int) -> int:
 
 
 def _fingerprint_tree(root: Path) -> str:
-    """A cheap fingerprint of a directory tree, sufficient to detect that it
-    changed since a cache was written.
+    """A cheap fingerprint of everything the cached arrays are computed from.
 
-    Deliberately does not hash file contents -- this runs over thousands of
-    images on every `train` invocation, and re-reading all of them would
-    defeat the point of caching. Sorted ``(relative_path, size, mtime_ns)``
-    triples change whenever a file is added, removed, or replaced (a replace
-    changes size and/or mtime; a rename changes the path), which is exactly
-    the set of edits `split_dataset` can make to `data/train`.
+    The cache stores ``(features, labels)``, and three separate things decide
+    what those arrays contain. All three are hashed here, because a cache hit
+    is a promise that recomputing would produce the same arrays:
+
+    1. **The image tree.** Sorted ``(relative_path, size, mtime_ns)`` triples,
+       which change whenever a file is added, removed or replaced (a replace
+       changes size and/or mtime; a rename changes the path) -- exactly the set
+       of edits `split_dataset` can make to `data/train`. Deliberately not the
+       file *contents*: this runs over thousands of images on every `train`
+       invocation and re-reading all of them would defeat the point of caching.
+    2. **SOURCE_TO_GROUP**, which decides the labels. `embed_folder` consults
+       it per class, so remapping one source class -- `rainbow` from CLOUDY to
+       CLEAR, say, or un-dropping `sandstorm`; both are judgement calls sitting
+       right there in the table -- changes what the cached labels mean while
+       leaving the tree byte-identical.
+    3. **The CLIP checkpoint**, which decides the features. Bumping
+       MODEL_ARCHITECTURE or MODEL_WEIGHTS makes every cached embedding a
+       vector from a different model in a different space.
+
+    Without 2 and 3 the fingerprint matched, `_load_cache` printed `cache hit`,
+    and the retrain silently refitted on stale labels or stale embeddings --
+    twice caught in review, which is why this docstring enumerates rather than
+    summarises. Anything new that feeds `embed_folder` belongs in this list.
     """
     entries = sorted(
         (str(path.relative_to(root)), path.stat().st_size, path.stat().st_mtime_ns)
         for path in root.rglob("*")
         if path.is_file()
     )
-    return hashlib.sha256(repr(entries).encode()).hexdigest()
+    payload = repr(
+        (
+            entries,
+            sorted(SOURCE_TO_GROUP.items()),
+            MODEL_ARCHITECTURE,
+            MODEL_WEIGHTS,
+        )
+    )
+    return hashlib.sha256(payload.encode()).hexdigest()
 
 
 def _load_cache(source: Path, cache_path: Path) -> tuple[np.ndarray, list[str]] | None:
@@ -358,6 +400,18 @@ def train(source: Path, destination: Path) -> None:
     if unknown:
         raise SystemExit(f"refusing to save a probe with unknown groups: {unknown}")
 
+    # `classes_` is whatever the pool happened to contain, so a `data/train`
+    # with no `hail` and no `lightning` fits five classes and would otherwise
+    # write a five-group probe that answers the documented six-key
+    # `phenomenon_scores` contract with five keys. `load_probe` refuses such a
+    # file; refuse to create it here too, where the operator can still see why.
+    missing = [group for group in GROUP_ORDER if group not in groups]
+    if missing:
+        raise SystemExit(
+            f"refusing to save a probe missing {missing}: {source} has no images "
+            f"for the source classes that map to those groups (see SOURCE_TO_GROUP)"
+        )
+
     destination.parent.mkdir(parents=True, exist_ok=True)
     np.savez(
         destination,
@@ -368,17 +422,27 @@ def train(source: Path, destination: Path) -> None:
     print(f"\nwrote {destination} ({destination.stat().st_size} bytes)")
 
 
+USAGE = (
+    "usage: train_probe.py split <multiclass_source> <train_dir> <test_dir>\n"
+    "       train_probe.py train <train_dir> <probe_path>"
+)
+
+
 def main() -> None:
+    # Length-checked before indexing, and each branch checked before indexing
+    # its own arguments. Running the script bare is the commonest mistake and
+    # used to answer `IndexError: list index out of range` instead of the usage
+    # string written directly below for exactly that moment.
+    if len(sys.argv) < 2:
+        raise SystemExit(USAGE)
+
     command = sys.argv[1]
-    if command == "split":
+    if command == "split" and len(sys.argv) == 5:
         split_dataset(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]))
-    elif command == "train":
+    elif command == "train" and len(sys.argv) == 4:
         train(Path(sys.argv[2]), Path(sys.argv[3]))
     else:
-        raise SystemExit(
-            "usage: train_probe.py split <multiclass_source> <train_dir> <test_dir>\n"
-            "       train_probe.py train <train_dir> <probe_path>"
-        )
+        raise SystemExit(USAGE)
 
 
 if __name__ == "__main__":

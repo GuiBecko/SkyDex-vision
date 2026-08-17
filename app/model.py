@@ -1,9 +1,19 @@
 """The only file in this service that loads PyTorch.
 
 Text embeddings for both prompt sets are computed once, at construction, and
-kept on the instance. A request therefore costs exactly one image encode plus
-two matrix multiplies against small precomputed matrices — roughly 250ms on one
-CPU core for ViT-B/32.
+kept on the instance, so a request never re-encodes text. What it costs after
+that depends on which phenomenon head is mounted:
+
+- With `data/probe.npz` present — the shipped configuration — a request is one
+  image encode, one multiply against the precomputed outdoor prompt matrix,
+  and one `(6, 512)` multiply against the probe. `_phenomenon_features` is
+  never touched.
+- Without it, on the zero-shot fallback, a request is one image encode and two
+  multiplies against the two precomputed prompt matrices, `_outdoor_features`
+  and `_phenomenon_features`.
+
+Either way the image encode dominates — roughly 250ms on one CPU core for
+ViT-B/32, against microseconds for the multiplies.
 """
 
 import io
@@ -106,5 +116,13 @@ class VisionModel:
 
 @lru_cache(maxsize=1)
 def load_model() -> VisionModel:
-    """Built once per process. The first call takes several seconds."""
+    """Built once per process. The first call takes several seconds.
+
+    ``lru_cache`` memoizes the *result*, not an exception — so if construction
+    raises (a corrupt or incomplete `data/probe.npz` is the reachable case),
+    every subsequent call retries the whole ~350MB checkpoint load before
+    failing again. `main.py` therefore calls this at application startup, where
+    a failure kills the process, rather than leaving the first call to land on
+    the request path.
+    """
     return VisionModel()
