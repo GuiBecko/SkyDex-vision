@@ -1,5 +1,9 @@
 # skydex-vision
 
+Part of [SkyDex](https://github.com/GuiBecko/skydex): a gamified camera app for
+capturing meteorological events and sharing them with friends. Start there for
+the architecture and screenshots.
+
 Scores a photograph for the SkyDex backend: how much it looks like an outdoor
 sky, and which of six weather groups it resembles. It returns numbers only —
 every threshold and every verdict lives in the Kotlin backend.
@@ -26,7 +30,7 @@ Python 3.11 (not 3.14 — PyTorch has no wheels for it):
 wheel straight over the CPU one, which is how this install balloons by
 several gigabytes on a machine with no NVIDIA GPU.
 
-The fast suite is 45 passed, 3 deselected. The three deselected ones load the
+The fast suite is 48 passed, 3 deselected. The three deselected ones load the
 real model, so they are marked `slow`, and there is one per head:
 
 - `tests/test_accuracy.py` — the **outdoor** head against the golden set:
@@ -96,6 +100,17 @@ underperformed zero-shot on real photographs for seven tasks.
 `400` means the bytes are not a readable image. There is no status for
 "fraudulent" — this service does not have that opinion.
 
-## Design
+## Licences
 
-`docs/superpowers/specs/2026-08-16-ai-photo-validation-design.md`
+The code is MIT — see `LICENSE`.
+
+Two things in this repository are not:
+
+- The 30 photographs in `data/golden/images/` are third-party works, each under
+  its own licence. `data/golden/manifest.csv` names the author and licence of
+  every one; `data/golden/LICENSE-IMAGES.md` explains what they require.
+- `data/probe.npz` holds coefficients learned from two Kaggle datasets. No
+  image from either is redistributed here. See `training/README.md`.
+
+`THIRD-PARTY.md` covers OpenCLIP and the LAION-2B weights, including the fact
+that the Docker image embeds them.
