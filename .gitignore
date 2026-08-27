@@ -3,6 +3,8 @@ __pycache__/
 .venv/
 .pytest_cache/
 *.npz
+# The trained probe is shipped; see training/README.md for its provenance.
+!data/probe.npz
 .ipynb_checkpoints/
 data/train/
 data/test/
