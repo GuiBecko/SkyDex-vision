@@ -118,3 +118,8 @@ set end-to-end — the sourcing (picking which photograph represents "storm"
 vs "rain") was manual curation against Commons search results, which is
 exactly the manual step the task brief expects a human to do with their own camera
 roll instead.
+
+Since the repository went public, `manifest.csv` also carries an `author` and
+a `licence` column for every row, and `LICENSE-IMAGES.md` explains what those
+licences require of anyone reusing an image. The images are not MIT; the code
+is.
