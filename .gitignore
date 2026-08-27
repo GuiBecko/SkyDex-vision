@@ -9,3 +9,9 @@ __pycache__/
 data/train/
 data/test/
 *.zip
+
+### Local tooling — never source ###
+CLAUDE.md
+.claude/
+.superpowers/
+.idea/
